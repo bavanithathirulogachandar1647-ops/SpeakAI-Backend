@@ -1,0 +1,8 @@
+Flask
+flask-cors
+mysql-connector-python
+python-dotenv
+google-genai
+Flask-JWT-Extended
+Werkzeug
+gunicorn
