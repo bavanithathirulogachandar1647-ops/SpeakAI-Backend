@@ -5,4 +5,4 @@ python-dotenv
 google-genai
 Flask-JWT-Extended
 Werkzeug
-gunicorn
+gunicorn==23.0.0
