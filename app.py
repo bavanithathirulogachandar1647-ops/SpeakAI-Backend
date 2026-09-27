@@ -1,107 +1,49 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-
 import mysql.connector
 import os
-
 from dotenv import load_dotenv
 from google import genai
-
-from werkzeug.security import (
-    generate_password_hash,
-    check_password_hash
-)
-
-from flask_jwt_extended import (
-    JWTManager,
-    create_access_token,
-    jwt_required,
-    get_jwt_identity
-)
-
-
-# =========================================================
-# LOAD ENVIRONMENT VARIABLES
-# =========================================================
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 
 load_dotenv()
 
-
-# =========================================================
-# FLASK APP
-# =========================================================
-
 app = Flask(__name__)
-
 CORS(app)
 
-
-# =========================================================
-# JWT CONFIGURATION
-# =========================================================
-
 app.config["JWT_SECRET_KEY"] = os.getenv(
-    "JWT_SECRET_KEY",
-    "SpeakAI_Secret_Key_2026"
-)
-
+    "JWT_SECRET_KEY", "SpeakAI_Secret_Key_2026")
 jwt = JWTManager(app)
 
-
-# =========================================================
-# GEMINI CONFIGURATION
-# =========================================================
-
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+client = genai.Client(api_key=GEMINI_API_KEY)
 
-client = genai.Client(
-    api_key=GEMINI_API_KEY
-)
-
-
-# =========================================================
-# MYSQL DATABASE CONNECTION
-# =========================================================
 
 def get_db_connection():
-
     return mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password=os.getenv("MYSQL_PASSWORD"),
-        database="language_learning"
+        host=os.getenv("MYSQLHOST", "localhost"),
+        port=int(os.getenv("MYSQLPORT", "3306")),
+        user=os.getenv("MYSQLUSER", "root"),
+        password=os.getenv("MYSQLPASSWORD"),
+        database=os.getenv("MYSQLDATABASE", "language_learning")
     )
 
 
-# =========================================================
-# HOME ROUTE
-# =========================================================
-
 @app.route("/", methods=["GET"])
 def home():
-
     return jsonify({
         "message": "AI Language Learning Platform Backend is Running!"
     })
 
 
-# =========================================================
-# TEST DATABASE
-# =========================================================
-
 @app.route("/test-db", methods=["GET"])
 def test_db():
-
     try:
-
         db = get_db_connection()
-
         cursor = db.cursor()
-
         cursor.execute("SELECT 1")
-
         result = cursor.fetchone()
-
         cursor.close()
         db.close()
 
@@ -111,60 +53,32 @@ def test_db():
         })
 
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-        return jsonify({
-            "error": str(e)
-        }), 500
-
-
-# =========================================================
-# REGISTER
-# =========================================================
 
 @app.route("/register", methods=["POST"])
 def register():
-
     try:
-
         data = request.get_json()
 
         name = data.get("name")
         email = data.get("email")
         password = data.get("password")
 
-        # -----------------------------
-        # VALIDATION
-        # -----------------------------
-
         if not name or not email or not password:
-
             return jsonify({
                 "error": "All fields are required"
             }), 400
 
         if len(password) < 6:
-
             return jsonify({
                 "error": "Password must contain at least 6 characters"
             }), 400
 
-        # -----------------------------
-        # HASH PASSWORD
-        # -----------------------------
-
-        hashed_password = generate_password_hash(
-            password
-        )
-
-        # -----------------------------
-        # DATABASE
-        # -----------------------------
+        hashed_password = generate_password_hash(password)
 
         db = get_db_connection()
-
         cursor = db.cursor()
-
-        # Check existing email
 
         cursor.execute(
             "SELECT id FROM users WHERE email = %s",
@@ -174,7 +88,6 @@ def register():
         existing_user = cursor.fetchone()
 
         if existing_user:
-
             cursor.close()
             db.close()
 
@@ -182,28 +95,16 @@ def register():
                 "error": "Email already registered"
             }), 409
 
-        # -----------------------------
-        # INSERT USER
-        # -----------------------------
-
         cursor.execute(
             """
             INSERT INTO users
             (name, email, password)
             VALUES (%s, %s, %s)
             """,
-            (
-                name,
-                email,
-                hashed_password
-            )
+            (name, email, hashed_password)
         )
 
         user_id = cursor.lastrowid
-
-        # -----------------------------
-        # CREATE PROGRESS RECORD
-        # -----------------------------
 
         cursor.execute(
             """
@@ -231,44 +132,30 @@ def register():
         }), 201
 
     except mysql.connector.Error as e:
-
         return jsonify({
             "error": f"MySQL error: {str(e)}"
         }), 500
 
     except Exception as e:
-
         return jsonify({
             "error": str(e)
         }), 500
 
 
-# =========================================================
-# LOGIN
-# =========================================================
-
 @app.route("/login", methods=["POST"])
 def login():
-
     try:
-
         data = request.get_json()
 
         email = data.get("email")
         password = data.get("password")
 
         if not email or not password:
-
             return jsonify({
                 "error": "Email and password are required"
             }), 400
 
-        # -----------------------------
-        # DATABASE
-        # -----------------------------
-
         db = get_db_connection()
-
         cursor = db.cursor(dictionary=True)
 
         cursor.execute(
@@ -289,32 +176,18 @@ def login():
         cursor.close()
         db.close()
 
-        # -----------------------------
-        # CHECK USER
-        # -----------------------------
-
         if not user:
-
             return jsonify({
                 "error": "Invalid email or password"
             }), 401
-
-        # -----------------------------
-        # CHECK HASHED PASSWORD
-        # -----------------------------
 
         if not check_password_hash(
             user["password"],
             password
         ):
-
             return jsonify({
                 "error": "Invalid email or password"
             }), 401
-
-        # -----------------------------
-        # CREATE JWT TOKEN
-        # -----------------------------
 
         access_token = create_access_token(
             identity=str(user["id"])
@@ -329,33 +202,23 @@ def login():
         }), 200
 
     except mysql.connector.Error as e:
-
         return jsonify({
             "error": f"MySQL error: {str(e)}"
         }), 500
 
     except Exception as e:
-
         return jsonify({
             "error": str(e)
         }), 500
 
 
-# =========================================================
-# AI TUTOR / AI CONVERSATION
-# =========================================================
-
 @app.route("/ai-tutor", methods=["POST"])
 def ai_tutor():
-
     try:
-
         data = request.get_json()
-
         question = data.get("question")
 
         if not question:
-
             return jsonify({
                 "error": "Question is required"
             }), 400
@@ -381,27 +244,18 @@ Give a helpful educational response.
         })
 
     except Exception as e:
-
         return jsonify({
             "error": str(e)
         }), 500
 
 
-# =========================================================
-# TAMIL TRANSLATION
-# =========================================================
-
 @app.route("/translate", methods=["POST"])
 def translate():
-
     try:
-
         data = request.get_json()
-
         text = data.get("text")
 
         if not text:
-
             return jsonify({
                 "error": "Text is required"
             }), 400
@@ -425,27 +279,18 @@ Return only the Tamil translation.
         })
 
     except Exception as e:
-
         return jsonify({
             "error": str(e)
         }), 500
 
 
-# =========================================================
-# GRAMMAR CORRECTION
-# =========================================================
-
 @app.route("/grammar-correction", methods=["POST"])
 def grammar_correction():
-
     try:
-
         data = request.get_json()
-
         text = data.get("text")
 
         if not text:
-
             return jsonify({
                 "error": "Text is required"
             }), 400
@@ -477,27 +322,18 @@ Keep the explanation simple.
         })
 
     except Exception as e:
-
         return jsonify({
             "error": str(e)
         }), 500
 
 
-# =========================================================
-# AI QUIZ
-# =========================================================
-
 @app.route("/generate-quiz", methods=["POST"])
 def generate_quiz():
-
     try:
-
         data = request.get_json()
-
         topic = data.get("topic")
 
         if not topic:
-
             return jsonify({
                 "error": "Topic is required"
             }), 400
@@ -528,28 +364,20 @@ Make the quiz suitable for a beginner English learner.
         })
 
     except Exception as e:
-
         return jsonify({
             "error": str(e)
         }), 500
 
 
-# =========================================================
-# SPEAKING PRACTICE
-# =========================================================
-
 @app.route("/speaking-practice", methods=["POST"])
 def speaking_practice():
-
     try:
-
         data = request.get_json()
 
         text = data.get("text")
         user_id = data.get("user_id")
 
         if not text:
-
             return jsonify({
                 "error": "Text is required"
             }), 400
@@ -576,23 +404,13 @@ Speaking improvement tip:
 
         feedback = response.text
 
-        # -----------------------------
-        # SAVE SPEAKING PROGRESS
-        # -----------------------------
-
         if user_id:
-
             db = get_db_connection()
-
-            cursor = db.cursor(dictionary=True)
+            cursor = db.cursor()
 
             cursor.execute(
                 """
-                SELECT
-                    vocabulary_completed,
-                    grammar_completed,
-                    quiz_score,
-                    pronunciation_completed
+                SELECT user_id
                 FROM progress
                 WHERE user_id = %s
                 """,
@@ -602,19 +420,16 @@ Speaking improvement tip:
             progress = cursor.fetchone()
 
             if progress:
-
                 cursor.execute(
                     """
                     UPDATE progress
                     SET pronunciation_completed =
-                        pronunciation_completed + 1
+                    pronunciation_completed + 1
                     WHERE user_id = %s
                     """,
                     (user_id,)
                 )
-
             else:
-
                 cursor.execute(
                     """
                     INSERT INTO progress
@@ -631,7 +446,6 @@ Speaking improvement tip:
                 )
 
             db.commit()
-
             cursor.close()
             db.close()
 
@@ -640,46 +454,23 @@ Speaking improvement tip:
         })
 
     except Exception as e:
-
         return jsonify({
             "error": str(e)
         }), 500
 
 
-# =========================================================
-# GET USER PROGRESS
-# =========================================================
-
 @app.route("/progress/<int:user_id>", methods=["GET"])
 @jwt_required()
 def get_progress(user_id):
-
     try:
-
-        # -----------------------------
-        # GET LOGGED-IN USER
-        # -----------------------------
-
-        current_user_id = int(
-            get_jwt_identity()
-        )
-
-        # -----------------------------
-        # SECURITY CHECK
-        # -----------------------------
+        current_user_id = int(get_jwt_identity())
 
         if current_user_id != user_id:
-
             return jsonify({
                 "error": "Unauthorized"
             }), 403
 
-        # -----------------------------
-        # DATABASE
-        # -----------------------------
-
         db = get_db_connection()
-
         cursor = db.cursor(dictionary=True)
 
         cursor.execute(
@@ -701,7 +492,6 @@ def get_progress(user_id):
         db.close()
 
         if not progress:
-
             return jsonify({
                 "vocabulary_completed": 0,
                 "grammar_completed": 0,
@@ -712,22 +502,15 @@ def get_progress(user_id):
         return jsonify(progress)
 
     except Exception as e:
-
         return jsonify({
             "error": str(e)
         }), 500
 
 
-# =========================================================
-# UPDATE USER PROGRESS
-# =========================================================
-
 @app.route("/progress", methods=["POST"])
 @jwt_required()
 def update_progress():
-
     try:
-
         data = request.get_json()
 
         user_id = data.get("user_id")
@@ -748,30 +531,14 @@ def update_progress():
             data.get("pronunciation_completed", 0)
         )
 
-        # -----------------------------
-        # JWT USER
-        # -----------------------------
-
-        current_user_id = int(
-            get_jwt_identity()
-        )
-
-        # -----------------------------
-        # SECURITY CHECK
-        # -----------------------------
+        current_user_id = int(get_jwt_identity())
 
         if current_user_id != int(user_id):
-
             return jsonify({
                 "error": "Unauthorized"
             }), 403
 
-        # -----------------------------
-        # DATABASE
-        # -----------------------------
-
         db = get_db_connection()
-
         cursor = db.cursor()
 
         cursor.execute(
@@ -803,20 +570,14 @@ def update_progress():
         })
 
     except Exception as e:
-
         return jsonify({
             "error": str(e)
         }), 500
 
 
-# =========================================================
-# RUN SERVER
-# =========================================================
-
 if __name__ == "__main__":
-
     app.run(
-        debug=True,
-        host="127.0.0.1",
-        port=5000
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", 5000)),
+        debug=False
     )
